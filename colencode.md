@@ -244,43 +244,104 @@ Before encoding the table, let's splay a version with the columns enumerated by 
 
 ``` q
 // Save as splayed table with columns enumerated by single sym file
-q)`:testdb/enum/enumtab/ set .Q.en[`:testdb/enum] tab
-`:testdb/enum/enumtab/
+q)\ts `:testdb/enum/enumtab/ set .Q.en[`:testdb/enum] tab
+650 356517056
 ```
 
 Now the version with individually encoded columns:
 
 ``` q
 // Save as splayed table with columns individually encoded
-q)`:testdb/encode/encodetab/ set update
-    charencode[`:testdb/encode/sym1map] sym1,
-    charencode[`:testdb/encode/sym2map] sym2,
-    shortencode[`:testdb/encode/sym3map] sym3,
-    shortencode[`:testdb/encode/sym4map] sym4,
-    intencode[`:testdb/encode/sym5map] sym5
-    from tab
-Adding 16 new value(s) to :testdb/encode/sym1map
-Adding 256 new value(s) to :testdb/encode/sym2map
-Adding 4096 new value(s) to :testdb/encode/sym3map    
-'domain
-```
-
-I forgot we can't use `short` for `sym4`. Let's try that again.
-
-``` q
-q)`:testdb/encode/encodetab/ set update
+q)\ts `:testdb/encode/encodetab/ set update
     charencode[`:testdb/encode/sym1map] sym1,
     charencode[`:testdb/encode/sym2map] sym2,
     shortencode[`:testdb/encode/sym3map] sym3,
     intencode[`:testdb/encode/sym4map] sym4,
     intencode[`:testdb/encode/sym5map] sym5
     from tab
+Adding 16 new value(s) to :testdb/encode/sym1map
+Adding 256 new value(s) to :testdb/encode/sym2map
+Adding 4096 new value(s) to :testdb/encode/sym3map
 Adding 65536 new value(s) to :testdb/encode/sym4map
 Adding 1039745 new value(s) to :testdb/encode/sym5map
-`:testdb/encode/encodetab/
+434 201328656
 ```
 
 ## Comparison
+
+### Write time
+
+The results of `\ts` above suggest it is faster and less memory intensive to column-encode and splay the table than to enumerate and splay the table.
+
+To verify this, let's repeat the writing processes with some different scenarios:
+- The sym/mapping files and splayed tables are already written (i.e. the current state of things after doing the first write above)
+- The splayed tables are already written but the sym/mapping files are not (requires deleting the sym/mapping files)
+- The sym/mapping files are already written but the splayed tables are not (requires deleting the splayed tables)
+- Nothing has been written yet (requires clearing the directories, i.e. the state of things before doing the first write above)
+
+Below, each scenario is encapsulated in a function, and each function is executed 5 times.
+
+``` q
+// Functions which perform same write processes as above
+q)enumsplay:{`:testdb/enum/enumtab/ set .Q.en[`:testdb/enum] tab}
+q)encodesplay:{
+    `:testdb/encode/encodetab/ set update
+      charencode[`:testdb/encode/sym1map] sym1,
+      charencode[`:testdb/encode/sym2map] sym2,
+      shortencode[`:testdb/encode/sym3map] sym3,
+      intencode[`:testdb/encode/sym4map] sym4,
+      intencode[`:testdb/encode/sym5map] sym5
+      from tab}
+
+q)\ts:5 enumsplay[]
+5559 339738944
+
+q)\ts:5 encodesplay[]
+2479 188744288
+
+// Functions which remove previous sym/mapping files before each write
+q)enumsplaynosym:{system "rm testdb/enum/sym"; enumsplay[]}
+q)encodesplaynomaps:{system "rm testdb/encode/sym*map"; encodesplay[]}
+
+q)\ts:5 enumsplaynosym[]
+5517 339738976
+
+q)\ts:5 encodesplaynomaps[]
+Adding 16 new value(s) to :testdb/encode/sym1map
+Adding 256 new value(s) to :testdb/encode/sym2map
+Adding 4096 new value(s) to :testdb/encode/sym3map
+Adding 65536 new value(s) to :testdb/encode/sym4map
+Adding 1039727 new value(s) to :testdb/encode/sym5map
+Adding 16 new value(s) to :testdb/encode/sym1map
+...
+Adding 1039727 new value(s) to :testdb/encode/sym5map
+3517 201327264
+
+// Functions which remove previous tables before each write
+q)enumsplaynotab:{system "rm -r testdb/enum/enumtab"; enumsplay[]}
+q)encodesplaynotab:{system "rm -r testdb/encode/encodetab"; encodesplay[]}
+
+q)\ts:5 enumsplaynotab[]
+3535 339738976
+
+q)\ts:5 encodesplaynotab[]
+2374 188744320
+
+// Functions which clear directories before each write
+q)enumsplayfresh:{system "rm -r testdb/enum/*"; enumsplay[]}
+q)encodesplayfresh:{system "rm -r testdb/encode/*"; encodesplay[]}
+
+q)\ts:5 enumsplayfresh[]
+3003 339738976
+
+q)\ts:5 encodesplayfresh[]
+Adding 16 new value(s) to :testdb/encode/sym1map
+...
+Adding 1039727 new value(s) to :testdb/encode/sym5map
+1953 201327264
+```
+
+On average, the process of writing the mapping files and encoded table is 30-50% faster and uses ~40% less memory than the process of writing the sym file and enumerated table.
 
 ### Disk usage
 
